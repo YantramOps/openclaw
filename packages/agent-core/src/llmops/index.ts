@@ -4,7 +4,7 @@ import { Langfuse } from "langfuse";
 export class LlmOpsSubsystem {
   private static instance: LlmOpsSubsystem | null = null;
   public tracker: Langfuse | null = null;
-  private config: any;
+  public config: any;
 
   private constructor(runtimeConfig: RuntimeConfig) {
     this.config = runtimeConfig.llmOps;

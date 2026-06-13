@@ -43,27 +43,32 @@ export function formatSkillsForSystemPrompt(skills: Skill[]): string {
 export async function compileSystemPrompt(
   localAgentsMdPath: string,
   availableSkills: Skill[],
+  agentLlmOpsConfig?: { promptPath?: string; promptLabel?: string }, // 🎯 FIX: Accepting agent parameter blocks cleanly
   contextVars: Record<string, any> = {},
 ): Promise<string> {
-  // 1. Establish pristine disk fallback from your baked container filesystem
   let agentsMarkdownBase = "";
   try {
     if (fs.existsSync(localAgentsMdPath)) {
       agentsMarkdownBase = fs.readFileSync(localAgentsMdPath, "utf-8");
     }
   } catch (error) {
-    console.error(`[SystemPrompt] Warning: Static fallback file missing at ${localAgentsMdPath}`);
+    console.error(`[SystemPrompt] Fallback file missing at ${localAgentsMdPath}`);
   }
 
-  // 2. Query the active LLMOps telemetry client state
   const llmOps = LlmOpsSubsystem.getInstance();
-  const promptName = "openclaw-agents-manifest";
 
-  if (llmOps?.tracker && llmOps.tracker.config?.prompts?.enabled) {
+  // 🎯 Dynamic Ingestion Pass: Prioritize the explicit agent path over the global string placeholder
+  const promptName = agentLlmOpsConfig?.promptPath || "openclaw-agents-manifest";
+  const promptLabel = agentLlmOpsConfig?.promptLabel || "production";
+
+  if (llmOps?.tracker && llmOps.config?.prompts?.enabled) {
     try {
-      const remotePrompt = await llmOps.tracker.getPrompt(promptName);
+      // Pulls down your exact 'workspace/agents/lexguard-compliance-service/AGENTS' canvas target
+      const remotePrompt = await llmOps.tracker.getPrompt(promptName, undefined, {
+        label: promptLabel,
+      });
+
       if (remotePrompt) {
-        // Compile the markdown with real-time runtime token variables
         agentsMarkdownBase = remotePrompt.compile({
           clusterNode: process.env.TARGET_NODE || "guardianhub-edge",
           timestamp: new Date().toISOString(),
@@ -74,16 +79,13 @@ export async function compileSystemPrompt(
         );
       }
     } catch (error) {
-      // Fail-Soft safety guardrail: Outage or timeout will NOT crash your pods
       console.warn(
-        `[LLMOps] Cache miss/network timeout for "${promptName}". Reverting to container disk asset.`,
+        `[LLMOps] Cache miss/network timeout for "${promptName}". Reverting to local disk asset.`,
       );
     }
   }
 
-  // 3. Append the formatted skills XML mapping block to the base guidelines string
   const formattedSkills = formatSkillsForSystemPrompt(availableSkills);
-
   return formattedSkills ? `${agentsMarkdownBase}\n\n${formattedSkills}` : agentsMarkdownBase;
 }
 
